@@ -9,6 +9,8 @@
   ],
   "masterBaseUrl": "https://dxdevmaster.markaziaapis.com/api/",
   "portalUrl": "https://dxdevportal.markaziahub.com/",
+  "logoURL": "https://dxdevportal.markaziahub.com/assets/images/dxLogoORtmLogo.png",
+  "currency": "",
   "googleMapKey": "",
   "generalToken": ""
 }
