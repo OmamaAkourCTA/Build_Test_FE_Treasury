@@ -7,6 +7,8 @@
         "dxdevmasterold.markaziaapis.com",
         "dxdevtreasury.markaziaapis.com"
     ],
+    "logoURL": "https://dxdevportal.markaziahub.com/assets/images/dxLogoORtmLogo.png",
+    "currency": "IQDorJOD",
     "masterBaseUrl": "https://dxdevmaster.markaziaapis.com/api/",
     "portalUrl": "https://dxdevportal.markaziahub.com/",
     "googleMapKey": "",
