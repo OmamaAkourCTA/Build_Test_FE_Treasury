@@ -748,6 +748,11 @@ class CreateReconciliationComponent {
     this.selectedAmount = 0;
     this.filterParams = '';
     this.currency = '';
+    /**
+     * Persistent state storage keyed by ordersCardsCollectionId.
+     * Survives page navigation and form rebuilds.
+     */
+    this.rowStates = {};
     this.selecteddata = [];
     this.provider = [];
     this.cardlist = [];
@@ -793,7 +798,11 @@ class CreateReconciliationComponent {
       status: [30001]
     });
     this.filterForm.valueChanges.pipe((0,rxjs__WEBPACK_IMPORTED_MODULE_12__.debounceTime)(500)).subscribe(data => {
+      // Reset pagination and clear cross-page state when filters change
       this.page = 1;
+      this.rowStates = {};
+      this.selectedAmount = 0;
+      this.isReturn = false;
       let formValues = this._helperService.trim(data);
       if (formValues?.collectionDate) {
         formValues = {
@@ -809,6 +818,8 @@ class CreateReconciliationComponent {
   }
   fetcAllData() {
     this.loading = true;
+    // Save current page state before fetching new data
+    this.saveCurrentPageState();
     let params = '';
     if (this.filterParams) {
       params = `${this.filterParams}&pageSize=${this.limit}&pageNo=${this.page - 1}&sort=${this.sort}`;
@@ -820,16 +831,99 @@ class CreateReconciliationComponent {
         this.reconciliation = result.data || [];
         this.totalAllRecordsCount = result?.totalRecordCount;
         this.total = result?.totalRecordCount;
-        this.cardsArray.clear();
-        this.reconciliation = this.reconciliation.map(element => {
-          this.cardsArray.push(this.initFormGroup(element));
-          return {
-            ...element,
-            checked: false
-          };
-        });
+        // Rebuild form array for current page
+        this.buildCurrentPageForm();
       }
     }).add(() => this.loading = false);
+  }
+  /**
+   * Save the current page's form values into rowStates before navigating away.
+   */
+  saveCurrentPageState() {
+    this.cardsArray.controls.forEach((control, index) => {
+      if (this.reconciliation[index]) {
+        this.saveRowState(index);
+      }
+    });
+  }
+  /**
+   * Save a specific row's current form values into rowStates.
+   */
+  saveRowState(index) {
+    const ordersCardsCollectionId = this.reconciliation[index]?.ordersCardsCollectionId;
+    if (!ordersCardsCollectionId) return;
+    const control = this.cardsArray.at(index);
+    const rawValue = control.getRawValue();
+    this.rowStates[ordersCardsCollectionId] = {
+      ordersCardsCollectionId,
+      reconcilationIds: rawValue.reconcilationIds,
+      comissionAmount: rawValue.comissionAmount || '',
+      netAmount: rawValue.netAmount,
+      bankaccountID: rawValue.bankaccountID,
+      depositDate: rawValue.depositDate,
+      checked: rawValue.checked,
+      isReturn: rawValue.isReturn,
+      cardCollectionJod: rawValue.cardCollectionJod
+    };
+  }
+  /**
+   * Clear and rebuild cardsArray for the current page data.
+   * Restores values from rowStates if they exist.
+   */
+  buildCurrentPageForm() {
+    this.cardsArray.clear();
+    this.reconciliation = this.reconciliation.map(element => {
+      const ordersCardsCollectionId = element.ordersCardsCollectionId;
+      const savedState = this.rowStates[ordersCardsCollectionId];
+      let formControl;
+      if (savedState) {
+        // Restore from persistent state
+        formControl = this.fb.group({
+          reconcilationIds: [savedState.reconcilationIds],
+          comissionAmount: [savedState.comissionAmount],
+          netAmount: [savedState.netAmount],
+          bankaccountID: [savedState.bankaccountID],
+          depositDate: [savedState.depositDate],
+          checked: [savedState.checked],
+          isReturn: [savedState.isReturn],
+          cardCollectionJod: [savedState.cardCollectionJod]
+        });
+        // Restore validators if the row was checked
+        if (savedState.checked && savedState.reconcilationIds) {
+          this.setValidator('comissionAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
+          this.setValidator('netAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
+          this.setValidator('depositDate', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
+          this.setValidator('bankaccountID', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
+        }
+        // Handle disabled controls for return transactions
+        if (savedState.isReturn) {
+          formControl.get('comissionAmount')?.disable();
+          formControl.get('netAmount')?.disable();
+        }
+      } else {
+        // Initialize new row using existing logic
+        formControl = this.initFormGroup(element);
+      }
+      this.cardsArray.push(formControl);
+      return {
+        ...element,
+        checked: savedState?.checked || false
+      };
+    });
+    // Recalculate global selectedAmount and isReturn
+    this.calculateSelectedAmount();
+    this.getNotReturnedCardTransactions();
+  }
+  /**
+   * Calculate selectedAmount from all checked rows in rowStates.
+   */
+  calculateSelectedAmount() {
+    this.selectedAmount = 0;
+    Object.values(this.rowStates).forEach(state => {
+      if (state.checked) {
+        this.selectedAmount += state.cardCollectionJod;
+      }
+    });
   }
   getBankAccountList() {
     this.creditcardservice.getBankAccounts(`pageSize=1000&status=2001&accountType=15010`).subscribe(response => {
@@ -840,11 +934,18 @@ class CreateReconciliationComponent {
     return this.formGroup.get('cardsArray');
   }
   getNotReturnedCardTransactions() {
-    let filtered = this.cardsArray.getRawValue().filter(value => value?.reconcilationIds > 0);
-    if (filtered.length) this.isReturn = filtered.every(value => !value.isReturn);
+    const checkedRows = Object.values(this.rowStates).filter(state => state.checked && state.reconcilationIds);
+    if (checkedRows.length) {
+      this.isReturn = checkedRows.every(state => !state.isReturn);
+    } else {
+      this.isReturn = false;
+    }
   }
   groupReconciliation() {
-    let cardIds = this.cardsArray.getRawValue().filter(value => value?.reconcilationIds > 0 && !value.isReturn);
+    // Collect all checked non-return transactions from rowStates
+    const selectedRows = Object.values(this.rowStates).filter(state => state.checked && state.reconcilationIds && !state.isReturn);
+    if (!selectedRows.length) return;
+    const cardIds = selectedRows.map(state => state.reconcilationIds);
     const modalRef = this.modalService.open(_components_group_reconciliation_group_reconciliation_component__WEBPACK_IMPORTED_MODULE_1__.GroupReconciliationComponent, {
       size: 'lg'
     });
@@ -853,19 +954,11 @@ class CreateReconciliationComponent {
       totalAmount: this.selectedAmount
     };
     modalRef.componentInstance.eventData.subscribe(value => {
-      //let comPercentage = value?.commissionPercentage;
-      //this.cardsArray.controls.forEach((control: AbstractControl, index: number) => {
-      //  let reconcilationId = control.get('reconcilationIds')?.value;
-      //  if (reconcilationId) {
-      //    let amount = +this.reconciliation[index].cardCollectionJod;
-      //    let comAmount = +(amount * comPercentage / 100)
-      //    control.get('comissionPercentage')?.setValue(comPercentage);
-      //    control.get('comissionAmount')?.setValue(comAmount.toFixed(3));
-      //    control.get('netAmount')?.setValue((amount - comAmount).toFixed(3));
-      //  }
-      //})
+      // Clear cross-page state on successful group reconciliation
+      this.rowStates = {};
       this.selectedAmount = 0;
       this.isReturn = false;
+      this.page = 1;
       this.fetcAllData();
       modalRef.dismiss();
     });
@@ -873,16 +966,14 @@ class CreateReconciliationComponent {
   initFormGroup(item) {
     const formGroup = this.fb.group({
       reconcilationIds: [null],
-      //comissionPercentage: ['0'],
       comissionAmount: [''],
       netAmount: [null],
       bankaccountID: [null],
       depositDate: [new Date()],
       checked: [false],
       isReturn: [item?.isReturn],
-      cardCollectionJod: [item?.cardCollectionJod] //Readonly
+      cardCollectionJod: [item?.cardCollectionJod]
     });
-
     if (item && item.isReturn) {
       formGroup.get('comissionAmount')?.setValue('0');
       formGroup.get('comissionAmount')?.disable();
@@ -903,6 +994,8 @@ class CreateReconciliationComponent {
       }
       this.cardsArray.at(index).get('netAmount')?.setValue((amount - commissionAmount).toFixed(3));
     }
+    // Persist the change immediately
+    this.saveRowState(index);
   }
   handleNetAmountChange(event, index, row) {
     let netAmount = event.target.value;
@@ -916,10 +1009,11 @@ class CreateReconciliationComponent {
       }
       this.cardsArray.at(index).get('comissionAmount')?.setValue((amount - netAmount).toFixed(3));
     }
+    // Persist the change immediately
+    this.saveRowState(index);
   }
   checkAll(event) {
     let checked = event.target.checked;
-    this.selectedAmount = 0;
     this.reconciliation.forEach((x, index) => {
       if (checked) {
         this.cardsArray.at(index).get('checked')?.setValue(true);
@@ -928,7 +1022,6 @@ class CreateReconciliationComponent {
         this.setValidator('netAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, index);
         this.setValidator('depositDate', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, index);
         this.setValidator('bankaccountID', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, index);
-        this.selectedAmount += x.cardCollectionJod;
       } else {
         this.cardsArray.at(index).get('checked')?.setValue(false);
         this.cardsArray.at(index).get('reconcilationIds')?.setValue(null);
@@ -937,7 +1030,10 @@ class CreateReconciliationComponent {
         this.setValidator('depositDate', null, index);
         this.setValidator('bankaccountID', null, index);
       }
+      // Persist each row's state
+      this.saveRowState(index);
     });
+    this.calculateSelectedAmount();
     this.getNotReturnedCardTransactions();
   }
   handleChangeCheckBox(event, item, index) {
@@ -947,15 +1043,16 @@ class CreateReconciliationComponent {
       this.setValidator('comissionAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, index);
       this.setValidator('netAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, index);
       this.setValidator('bankaccountID', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, index);
-      this.selectedAmount += item?.cardCollectionJod;
     } else {
       this.cardsArray.at(index).get('reconcilationIds')?.setValue(null);
       this.setValidator('comissionAmount', null, index);
       this.setValidator('netAmount', null, index);
       this.setValidator('depositDate', null, index);
       this.setValidator('bankaccountID', null, index);
-      this.selectedAmount -= item?.cardCollectionJod;
     }
+    // Persist the change
+    this.saveRowState(index);
+    this.calculateSelectedAmount();
     this.getNotReturnedCardTransactions();
   }
   setValidator(controlName, validator, index) {
@@ -968,25 +1065,66 @@ class CreateReconciliationComponent {
       control?.updateValueAndValidity();
     }
   }
+  /**
+   * Validate that all checked rows across all pages have required values.
+   */
+  isSelectedRowsValid() {
+    const checkedRows = Object.values(this.rowStates).filter(state => state.checked && state.reconcilationIds);
+    if (checkedRows.length === 0) {
+      return false;
+    }
+    return checkedRows.every(state => {
+      // Check required fields
+      if (!state.comissionAmount && state.comissionAmount !== '0') return false;
+      if (state.netAmount === null || state.netAmount === undefined || state.netAmount === '') return false;
+      if (!state.bankaccountID) return false;
+      if (!state.depositDate) return false;
+      // Check amount validity
+      const commissionAmount = parseFloat(state.comissionAmount);
+      const netAmount = parseFloat(state.netAmount);
+      if (isNaN(commissionAmount) || isNaN(netAmount)) return false;
+      if (commissionAmount > state.cardCollectionJod || netAmount > state.cardCollectionJod) return false;
+      return true;
+    });
+  }
   onPostReconcilationIds() {
-    let data = this.cardsArray.getRawValue().filter(x => x.checked).map(item => {
+    // Ensure current page state is saved
+    this.saveCurrentPageState();
+    // Validate all checked rows
+    if (!this.isSelectedRowsValid()) {
+      this.responseModal('error', 'Please complete all required fields for selected transactions.');
+      return;
+    }
+    // Build payload from all checked rows in rowStates
+    let data = Object.values(this.rowStates).filter(state => state.checked && state.reconcilationIds).map(state => {
       return {
-        reconcilationIds: item?.reconcilationIds,
-        commission: item?.comissionAmount,
-        cardCollectionJodNet: item?.netAmount,
-        cardBankDepositDate: item?.depositDate,
-        bankaccountID: item?.bankaccountID
+        reconcilationIds: state.reconcilationIds,
+        commission: state.comissionAmount,
+        cardCollectionJodNet: state.netAmount,
+        cardBankDepositDate: state.depositDate,
+        bankaccountID: state.bankaccountID
       };
     });
     this.creditcardservice.ReconcilationIds(data).subscribe(result => {
       if (result.isSuccess) {
         this.responseModal('success', `Reconciliation successfully done.`);
-        this.fetcAllData();
+        // Clear state on success
+        this.rowStates = {};
         this.selectedAmount = 0;
+        this.isReturn = false;
+        this.page = 1;
+        this.fetcAllData();
       }
     }, err => {
       this.responseModal('error', err?.error?.errors[0]?.ErrorMessageEn);
     }).add(() => this.loading = false);
+  }
+  /**
+   * Check if Post button should be enabled.
+   * Validates all checked rows across all pages.
+   */
+  isPostEnabled() {
+    return this.isSelectedRowsValid();
   }
   responseModal(type, message) {
     const ref = this.modalService.open(_shared_modals_message_modal_message_modal_component__WEBPACK_IMPORTED_MODULE_0__.MessageModalComponent);
@@ -1021,38 +1159,54 @@ class CreateReconciliationComponent {
     }
   }
   sortByCardLast4Digits() {
+    this.saveCurrentPageState();
     if (this.sort == 3) this.sort = 1;else {
       this.sort = this.sort == 2 ? 3 : 2;
     }
     ;
+    this.page = 1;
     this.fetcAllData();
   }
   sortByProviderName() {
+    this.saveCurrentPageState();
     if (this.sort == 5) this.sort = 1;else this.sort = this.sort == 4 ? 5 : 4;
+    this.page = 1;
     this.fetcAllData();
   }
   sortByOrderCollectionId() {
+    this.saveCurrentPageState();
     if (this.sort == 7) this.sort = 1;else this.sort = this.sort == 6 ? 7 : 6;
+    this.page = 1;
     this.fetcAllData();
   }
   sortByCollectionAt() {
+    this.saveCurrentPageState();
     if (this.sort == 9) this.sort = 1;else this.sort = this.sort == 8 ? 9 : 8;
+    this.page = 1;
     this.fetcAllData();
   }
   sortByBranchName() {
+    this.saveCurrentPageState();
     if (this.sort == 11) this.sort = 1;else this.sort = this.sort == 10 ? 11 : 10;
+    this.page = 1;
     this.fetcAllData();
   }
   sortByRegisterName() {
+    this.saveCurrentPageState();
     if (this.sort == 11) this.sort = 1;else this.sort = this.sort == 10 ? 11 : 10;
+    this.page = 1;
     this.fetcAllData();
   }
   sortByCardType() {
+    this.saveCurrentPageState();
     if (this.sort == 13) this.sort = 1;else this.sort = this.sort == 12 ? 13 : 12;
+    this.page = 1;
     this.fetcAllData();
   }
   sortByCardCollectionJod() {
+    this.saveCurrentPageState();
     if (this.sort == 15) this.sort = 1;else this.sort = this.sort == 14 ? 15 : 14;
+    this.page = 1;
     this.fetcAllData();
   }
   onPageChange(page) {
@@ -1073,13 +1227,12 @@ class CreateReconciliationComponent {
   }
   validateInput(event) {
     const enteredValue = event.target.value;
-    const pattern = /^[0-9]*\.?[0-9]*$/; // Regex pattern to allow numbers and decimal point
+    const pattern = /^[0-9]*\.?[0-9]*$/;
     if (!pattern.test(enteredValue)) {
-      event.target.value = enteredValue.replace(/[^0-9.]/g, ''); // Remove any invalid characters
+      event.target.value = enteredValue.replace(/[^0-9.]/g, '');
     }
   }
 }
-
 CreateReconciliationComponent.ɵfac = function CreateReconciliationComponent_Factory(t) {
   return new (t || CreateReconciliationComponent)(_angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](src_app_shared_services_credit_card_service__WEBPACK_IMPORTED_MODULE_2__.CreditCardService), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](_shared_services_header_service__WEBPACK_IMPORTED_MODULE_3__.HeaderService), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](_ng_bootstrap_ng_bootstrap__WEBPACK_IMPORTED_MODULE_13__.NgbModal), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](_angular_router__WEBPACK_IMPORTED_MODULE_14__.Router), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](_ng_bootstrap_ng_bootstrap__WEBPACK_IMPORTED_MODULE_13__.NgbModalConfig), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](_angular_forms__WEBPACK_IMPORTED_MODULE_9__.FormBuilder), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](_angular_common__WEBPACK_IMPORTED_MODULE_15__.DatePipe), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](_shared_services_helper_service__WEBPACK_IMPORTED_MODULE_4__.HelperService), _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵdirectiveInject"](src_app_shared_services_app_config_service__WEBPACK_IMPORTED_MODULE_5__.AppConfigService));
 };
@@ -1247,7 +1400,7 @@ CreateReconciliationComponent.ɵcmp = /*@__PURE__*/_angular_core__WEBPACK_IMPORT
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵlistener"]("click", function CreateReconciliationComponent_Template_button_click_119_listener() {
         return ctx.groupReconciliation();
       });
-      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵtext"](120, "Group Reconciliation");
+      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵtext"](120, " Group Reconciliation ");
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵelementEnd"]();
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵelementStart"](121, "button", 41);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵlistener"]("click", function CreateReconciliationComponent_Template_button_click_121_listener() {
@@ -1342,7 +1495,7 @@ CreateReconciliationComponent.ɵcmp = /*@__PURE__*/_angular_core__WEBPACK_IMPORT
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](5);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("disabled", !ctx.isReturn);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](2);
-      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("disabled", ctx.formGroup.invalid || ctx.selectedAmount == 0);
+      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("disabled", !ctx.isPostEnabled());
     }
   },
   dependencies: [_angular_common__WEBPACK_IMPORTED_MODULE_15__.NgClass, _angular_common__WEBPACK_IMPORTED_MODULE_15__.NgForOf, _angular_common__WEBPACK_IMPORTED_MODULE_15__.NgIf, _angular_router__WEBPACK_IMPORTED_MODULE_14__.RouterLink, _angular_forms__WEBPACK_IMPORTED_MODULE_9__["ɵNgNoValidate"], _angular_forms__WEBPACK_IMPORTED_MODULE_9__.DefaultValueAccessor, _angular_forms__WEBPACK_IMPORTED_MODULE_9__.CheckboxControlValueAccessor, _angular_forms__WEBPACK_IMPORTED_MODULE_9__.NgControlStatus, _angular_forms__WEBPACK_IMPORTED_MODULE_9__.NgControlStatusGroup, _angular_forms__WEBPACK_IMPORTED_MODULE_9__.FormGroupDirective, _angular_forms__WEBPACK_IMPORTED_MODULE_9__.FormControlName, _angular_forms__WEBPACK_IMPORTED_MODULE_9__.FormGroupName, _angular_forms__WEBPACK_IMPORTED_MODULE_9__.FormArrayName, _ng_select_ng_select__WEBPACK_IMPORTED_MODULE_16__.NgSelectComponent, _ng_select_ng_select__WEBPACK_IMPORTED_MODULE_16__.NgOptionTemplateDirective, ngx_bootstrap_datepicker__WEBPACK_IMPORTED_MODULE_17__.BsDatepickerDirective, ngx_bootstrap_datepicker__WEBPACK_IMPORTED_MODULE_17__.BsDatepickerInputDirective, ngx_bootstrap_datepicker__WEBPACK_IMPORTED_MODULE_17__.BsDaterangepickerDirective, ngx_bootstrap_datepicker__WEBPACK_IMPORTED_MODULE_17__.BsDaterangepickerInputDirective, _shared_directives_decimal_number_directive__WEBPACK_IMPORTED_MODULE_6__.DecimalNumberDirective, _shared_components_validation_error_validation_error_component__WEBPACK_IMPORTED_MODULE_7__.ValidationErrorComponent, _ng_bootstrap_ng_bootstrap__WEBPACK_IMPORTED_MODULE_13__.NgbPagination, _angular_common__WEBPACK_IMPORTED_MODULE_15__.DecimalPipe, _angular_common__WEBPACK_IMPORTED_MODULE_15__.DatePipe],
