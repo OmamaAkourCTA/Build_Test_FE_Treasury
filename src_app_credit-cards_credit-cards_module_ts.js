@@ -878,7 +878,7 @@ class CreateReconciliationComponent {
       const ordersCardsCollectionId = element.ordersCardsCollectionId;
       const savedState = this.rowStates[ordersCardsCollectionId];
       let formControl;
-      const checked = savedState?.checked ?? this.selectAllChecked;
+      const checked = this.selectAllChecked ? true : savedState?.checked ?? false;
       if (savedState || this.selectAllChecked) {
         formControl = this.fb.group({
           reconcilationIds: [checked ? element.ordersCardsCollectionId : savedState?.reconcilationIds ?? null],
@@ -1039,12 +1039,11 @@ class CreateReconciliationComponent {
       // Persist each row's state
       this.saveRowState(index);
     });
-    if (!checked) {
-      Object.values(this.rowStates).forEach(state => {
-        state.checked = false;
-        state.reconcilationIds = null;
-      });
-    }
+    // Apply the same state to rows on pages that were already visited
+    Object.values(this.rowStates).forEach(state => {
+      state.checked = checked;
+      state.reconcilationIds = checked ? state.ordersCardsCollectionId : null;
+    });
     this.calculateSelectedAmount();
     this.getNotReturnedCardTransactions();
   }
