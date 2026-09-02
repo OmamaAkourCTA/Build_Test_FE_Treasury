@@ -753,6 +753,7 @@ class CreateReconciliationComponent {
      * Survives page navigation and form rebuilds.
      */
     this.rowStates = {};
+    this.selectAllChecked = false;
     this.selecteddata = [];
     this.provider = [];
     this.cardlist = [];
@@ -803,6 +804,7 @@ class CreateReconciliationComponent {
       this.rowStates = {};
       this.selectedAmount = 0;
       this.isReturn = false;
+      this.selectAllChecked = false;
       let formValues = this._helperService.trim(data);
       if (formValues?.collectionDate) {
         formValues = {
@@ -876,27 +878,20 @@ class CreateReconciliationComponent {
       const ordersCardsCollectionId = element.ordersCardsCollectionId;
       const savedState = this.rowStates[ordersCardsCollectionId];
       let formControl;
-      if (savedState) {
-        // Restore from persistent state
+      const checked = savedState?.checked ?? this.selectAllChecked;
+      if (savedState || this.selectAllChecked) {
         formControl = this.fb.group({
-          reconcilationIds: [savedState.reconcilationIds],
-          comissionAmount: [savedState.comissionAmount],
-          netAmount: [savedState.netAmount],
-          bankaccountID: [savedState.bankaccountID],
-          depositDate: [savedState.depositDate],
-          checked: [savedState.checked],
-          isReturn: [savedState.isReturn],
-          cardCollectionJod: [savedState.cardCollectionJod]
+          reconcilationIds: [checked ? element.ordersCardsCollectionId : savedState?.reconcilationIds ?? null],
+          comissionAmount: [savedState?.comissionAmount || ''],
+          netAmount: [savedState?.netAmount ?? null],
+          bankaccountID: [savedState?.bankaccountID ?? null],
+          depositDate: [savedState?.depositDate ?? new Date()],
+          checked: [checked],
+          isReturn: [savedState?.isReturn ?? element?.isReturn],
+          cardCollectionJod: [savedState?.cardCollectionJod ?? element?.cardCollectionJod]
         });
-        // Restore validators if the row was checked
-        if (savedState.checked && savedState.reconcilationIds) {
-          this.setValidator('comissionAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
-          this.setValidator('netAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
-          this.setValidator('depositDate', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
-          this.setValidator('bankaccountID', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, this.cardsArray.length);
-        }
         // Handle disabled controls for return transactions
-        if (savedState.isReturn) {
+        if (formControl.get('isReturn')?.value) {
           formControl.get('comissionAmount')?.disable();
           formControl.get('netAmount')?.disable();
         }
@@ -905,9 +900,18 @@ class CreateReconciliationComponent {
         formControl = this.initFormGroup(element);
       }
       this.cardsArray.push(formControl);
+      const rowIndex = this.cardsArray.length - 1;
+      // Restore validators if the row is checked (must run after push so at(index) resolves)
+      if (checked) {
+        this.setValidator('comissionAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, rowIndex);
+        this.setValidator('netAmount', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, rowIndex);
+        this.setValidator('depositDate', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, rowIndex);
+        this.setValidator('bankaccountID', _angular_forms__WEBPACK_IMPORTED_MODULE_9__.Validators.required, rowIndex);
+      }
+      this.saveRowState(rowIndex);
       return {
         ...element,
-        checked: savedState?.checked || false
+        checked
       };
     });
     // Recalculate global selectedAmount and isReturn
@@ -958,6 +962,7 @@ class CreateReconciliationComponent {
       this.rowStates = {};
       this.selectedAmount = 0;
       this.isReturn = false;
+      this.selectAllChecked = false;
       this.page = 1;
       this.fetcAllData();
       modalRef.dismiss();
@@ -1014,6 +1019,7 @@ class CreateReconciliationComponent {
   }
   checkAll(event) {
     let checked = event.target.checked;
+    this.selectAllChecked = checked;
     this.reconciliation.forEach((x, index) => {
       if (checked) {
         this.cardsArray.at(index).get('checked')?.setValue(true);
@@ -1049,6 +1055,9 @@ class CreateReconciliationComponent {
       this.setValidator('netAmount', null, index);
       this.setValidator('depositDate', null, index);
       this.setValidator('bankaccountID', null, index);
+    }
+    if (!checked) {
+      this.selectAllChecked = false;
     }
     // Persist the change
     this.saveRowState(index);
@@ -1112,6 +1121,7 @@ class CreateReconciliationComponent {
         this.rowStates = {};
         this.selectedAmount = 0;
         this.isReturn = false;
+        this.selectAllChecked = false;
         this.page = 1;
         this.fetcAllData();
       }
@@ -1252,8 +1262,8 @@ CreateReconciliationComponent.ɵcmp = /*@__PURE__*/_angular_core__WEBPACK_IMPORT
   },
   features: [_angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵProvidersFeature"]([_angular_common__WEBPACK_IMPORTED_MODULE_15__.DatePipe])],
   decls: 128,
-  vars: 63,
-  consts: [[3, "formGroup"], [1, "row"], [1, "col-3", "mb-3"], ["formControlName", "providerId", "placeholder", "Provider", "bindLabel", "providerName", "bindValue", "providerId", 1, "flex-grow-1", "mt-3", "mt-md-0", 3, "items"], [1, "input-group"], ["type", "text", "placeholder", "Collection Date", "formControlName", "collectionDate", "bsDaterangepicker", "", 1, "form-control", "custom-input-field", 3, "bsConfig"], ["toDate", "bsDaterangepicker"], [1, "input-group-text", "cursor-pointer", 3, "click"], ["src", "/assets/images/calendar.png", "alt", "", 1, "calender"], ["formControlName", "cardTypeId", "placeholder", "Search By Card", "bindLabel", "name.lookupName", "bindValue", "id", 1, "flex-grow-1", "mt-3", "mt-md-0", 3, "items"], [1, "input-group-text"], [1, "fa-solid", "fa-search"], ["type", "text", "placeholder", "Net Amount", "formControlName", "netAmount", 1, "form-control", "height-45"], ["type", "text", "placeholder", "Last 4 Digits", "formControlName", "last4digits", 1, "form-control", "height-45"], ["type", "text", "placeholder", "Merchant ID", "formControlName", "machineID", 1, "form-control", "height-45"], ["formControlName", "branchId", "placeholder", "Search By Branch", "bindLabel", "branchName", "bindValue", "branchId", 1, "flex-grow-1", "mt-3", "mt-md-0", 3, "items"], [1, "col-12", "mb-3", "d-flex", "justify-content-end"], [1, "btn", "btn-add", 3, "click"], [1, "row", "mt-2"], [1, "col-lg-12", "text-heading"], [1, "col-lg-6", "text-heading"], [1, "col-lg-5", "offset-1"], [1, "col-lg-9", "text-end", "text-heading"], [1, "col-lg-3", "text-end"], [1, "table-advanced", "custom-table", "mt-3"], [1, "table-wrapper", "table-responsive"], [1, "table"], ["scope", "col"], [1, "btn", "d-flex", "gap-2", "flex-column", "align-items-start", "justify-content-start", 3, "disabled"], ["type", "checkbox", 1, "form-check-input", "input-checkbox", 3, "change"], [1, "btn", 3, "disabled", "click"], [1, "fa-solid", "fa-arrow-up-long"], [1, "fa-solid", "fa-arrow-down-long"], [1, "btn", 3, "disabled"], ["scope", "col", "width", "15%"], ["formArrayName", "cardsArray"], [3, "formGroupName", 4, "ngFor", "ngForOf"], ["class", "row mt-3", 4, "ngIf"], [1, "col-lg-12", "mt-3", "text-end"], ["routerLink", "/credit-card", 1, "btn", "btn-cancel", "me-2"], [1, "btn", "btn-add", "me-2", 3, "disabled", "click"], [1, "btn", "btn-add", 3, "disabled", "click"], ["class", "modal fade w-100 modal-dialog-centered", "id", "exampleModalToggle", "aria-hidden", "true", "aria-labelledby", "exampleModalToggleLabel", "tabindex", "-1"], ["myModal", ""], ["myErrorModal", ""], [3, "formGroupName"], ["type", "checkbox", "formControlName", "checked", 1, "form-check-input", "input-checkbox", 3, "change"], ["type", "text", "formControlName", "comissionAmount", "decimalNumber", "", 1, "form-control", 3, "ngClass", "change"], [4, "ngIf"], ["type", "text", "formControlName", "netAmount", "decimalNumber", "", 1, "form-control", 3, "change"], ["placeholder", "Bank Account", "formControlName", "bankaccountID", "bindLabel", "accountName", "bindValue", "accountId", 3, "items"], ["ng-option-tmp", ""], [3, "control", "errorMessages"], ["type", "text", "formControlName", "depositDate", "placeholder", "Select Date", "bsDatepicker", "", 1, "form-control", "custom-input-field", 3, "bsConfig"], ["drp", "bsDatepicker"], ["class", "text-danger", 4, "ngIf"], [1, "text-danger"], [1, "row", "mt-3"], [1, "col-12", "d-flex", "justify-content-end"], [3, "page", "pageSize", "collectionSize", "maxSize", "rotate", "boundaryLinks", "pageChange"], [1, "modal-dialog", "modal-dialog-centered"], [1, "modal-content"], [1, "modal-body", "text-center"], ["src", "../../../assets/svg/check-one.svg", "alt", "", "srcset", "", 1, "mt-4"], [1, "mt-4"], [1, "mt-3", "mb-4"], ["src", "../../../assets/svg/close-circle.svg", "alt", "", "srcset", "", 1, "mt-2"]],
+  vars: 64,
+  consts: [[3, "formGroup"], [1, "row"], [1, "col-3", "mb-3"], ["formControlName", "providerId", "placeholder", "Provider", "bindLabel", "providerName", "bindValue", "providerId", 1, "flex-grow-1", "mt-3", "mt-md-0", 3, "items"], [1, "input-group"], ["type", "text", "placeholder", "Collection Date", "formControlName", "collectionDate", "bsDaterangepicker", "", 1, "form-control", "custom-input-field", 3, "bsConfig"], ["toDate", "bsDaterangepicker"], [1, "input-group-text", "cursor-pointer", 3, "click"], ["src", "/assets/images/calendar.png", "alt", "", 1, "calender"], ["formControlName", "cardTypeId", "placeholder", "Search By Card", "bindLabel", "name.lookupName", "bindValue", "id", 1, "flex-grow-1", "mt-3", "mt-md-0", 3, "items"], [1, "input-group-text"], [1, "fa-solid", "fa-search"], ["type", "text", "placeholder", "Net Amount", "formControlName", "netAmount", 1, "form-control", "height-45"], ["type", "text", "placeholder", "Last 4 Digits", "formControlName", "last4digits", 1, "form-control", "height-45"], ["type", "text", "placeholder", "Merchant ID", "formControlName", "machineID", 1, "form-control", "height-45"], ["formControlName", "branchId", "placeholder", "Search By Branch", "bindLabel", "branchName", "bindValue", "branchId", 1, "flex-grow-1", "mt-3", "mt-md-0", 3, "items"], [1, "col-12", "mb-3", "d-flex", "justify-content-end"], [1, "btn", "btn-add", 3, "click"], [1, "row", "mt-2"], [1, "col-lg-12", "text-heading"], [1, "col-lg-6", "text-heading"], [1, "col-lg-5", "offset-1"], [1, "col-lg-9", "text-end", "text-heading"], [1, "col-lg-3", "text-end"], [1, "table-advanced", "custom-table", "mt-3"], [1, "table-wrapper", "table-responsive"], [1, "table"], ["scope", "col"], [1, "btn", "d-flex", "gap-2", "flex-column", "align-items-start", "justify-content-start", 3, "disabled"], ["type", "checkbox", 1, "form-check-input", "input-checkbox", 3, "checked", "change"], [1, "btn", 3, "disabled", "click"], [1, "fa-solid", "fa-arrow-up-long"], [1, "fa-solid", "fa-arrow-down-long"], [1, "btn", 3, "disabled"], ["scope", "col", "width", "15%"], ["formArrayName", "cardsArray"], [3, "formGroupName", 4, "ngFor", "ngForOf"], ["class", "row mt-3", 4, "ngIf"], [1, "col-lg-12", "mt-3", "text-end"], ["routerLink", "/credit-card", 1, "btn", "btn-cancel", "me-2"], [1, "btn", "btn-add", "me-2", 3, "disabled", "click"], [1, "btn", "btn-add", 3, "disabled", "click"], ["class", "modal fade w-100 modal-dialog-centered", "id", "exampleModalToggle", "aria-hidden", "true", "aria-labelledby", "exampleModalToggleLabel", "tabindex", "-1"], ["myModal", ""], ["myErrorModal", ""], [3, "formGroupName"], ["type", "checkbox", "formControlName", "checked", 1, "form-check-input", "input-checkbox", 3, "change"], ["type", "text", "formControlName", "comissionAmount", "decimalNumber", "", 1, "form-control", 3, "ngClass", "change"], [4, "ngIf"], ["type", "text", "formControlName", "netAmount", "decimalNumber", "", 1, "form-control", 3, "change"], ["placeholder", "Bank Account", "formControlName", "bankaccountID", "bindLabel", "accountName", "bindValue", "accountId", 3, "items"], ["ng-option-tmp", ""], [3, "control", "errorMessages"], ["type", "text", "formControlName", "depositDate", "placeholder", "Select Date", "bsDatepicker", "", 1, "form-control", "custom-input-field", 3, "bsConfig"], ["drp", "bsDatepicker"], ["class", "text-danger", 4, "ngIf"], [1, "text-danger"], [1, "row", "mt-3"], [1, "col-12", "d-flex", "justify-content-end"], [3, "page", "pageSize", "collectionSize", "maxSize", "rotate", "boundaryLinks", "pageChange"], [1, "modal-dialog", "modal-dialog-centered"], [1, "modal-content"], [1, "modal-body", "text-center"], ["src", "../../../assets/svg/check-one.svg", "alt", "", "srcset", "", 1, "mt-4"], [1, "mt-4"], [1, "mt-3", "mb-4"], ["src", "../../../assets/svg/close-circle.svg", "alt", "", "srcset", "", 1, "mt-2"]],
   template: function CreateReconciliationComponent_Template(rf, ctx) {
     if (rf & 1) {
       const _r39 = _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵgetCurrentView"]();
@@ -1417,20 +1427,22 @@ CreateReconciliationComponent.ɵcmp = /*@__PURE__*/_angular_core__WEBPACK_IMPORT
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](3);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("items", ctx.provider);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](3);
-      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("bsConfig", _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵpureFunction0"](62, _c4));
+      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("bsConfig", _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵpureFunction0"](63, _c4));
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](5);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("items", ctx.cardlist);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](17);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("items", ctx.branchList);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](7);
-      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵtextInterpolate2"]("Selected Amount: ", _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵpipeBind2"](36, 59, ctx.selectedAmount, "1.3-3"), " ", ctx.currency, "");
+      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵtextInterpolate2"]("Selected Amount: ", _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵpipeBind2"](36, 60, ctx.selectedAmount, "1.3-3"), " ", ctx.currency, "");
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](11);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵtextInterpolate1"]("Total No. ", ctx.total, "");
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](2);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("formGroup", ctx.formGroup);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](6);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("disabled", ctx.reconciliation.length == 0);
-      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](4);
+      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](2);
+      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("checked", ctx.selectAllChecked);
+      _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](2);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵproperty"]("disabled", ctx.reconciliation.length == 0);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵadvance"](2);
       _angular_core__WEBPACK_IMPORTED_MODULE_8__["ɵɵclassProp"]("active", ctx.sort == 2);
