@@ -1039,6 +1039,12 @@ class CreateReconciliationComponent {
       // Persist each row's state
       this.saveRowState(index);
     });
+    if (!checked) {
+      Object.values(this.rowStates).forEach(state => {
+        state.checked = false;
+        state.reconcilationIds = null;
+      });
+    }
     this.calculateSelectedAmount();
     this.getNotReturnedCardTransactions();
   }
