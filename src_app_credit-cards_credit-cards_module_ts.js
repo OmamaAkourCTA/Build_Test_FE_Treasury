@@ -799,12 +799,8 @@ class CreateReconciliationComponent {
       status: [30001]
     });
     this.filterForm.valueChanges.pipe((0,rxjs__WEBPACK_IMPORTED_MODULE_12__.debounceTime)(500)).subscribe(data => {
-      // Reset pagination and clear cross-page state when filters change
+      // Reset pagination only; keep selections so they survive filter changes
       this.page = 1;
-      this.rowStates = {};
-      this.selectedAmount = 0;
-      this.isReturn = false;
-      this.selectAllChecked = false;
       let formValues = this._helperService.trim(data);
       if (formValues?.collectionDate) {
         formValues = {
