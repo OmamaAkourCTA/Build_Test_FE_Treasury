@@ -967,15 +967,22 @@ class CreateReconciliationComponent {
       totalAmount: this.selectedAmount
     };
     modalRef.componentInstance.eventData.subscribe(value => {
-      // Clear cross-page state on successful group reconciliation
-      this.rowStates = {};
-      this.selectedAmount = 0;
-      this.isReturn = false;
-      this.selectAllChecked = false;
-      this.page = 1;
-      this.fetcAllData();
+      this.resetSelectionState();
       modalRef.dismiss();
     });
+  }
+  /**
+   * Clear all cross-page selection state and refetch page 1.
+   * Clears cardsArray first so stale checked controls aren't re-saved into rowStates by fetcAllData().
+   */
+  resetSelectionState() {
+    this.cardsArray.clear();
+    this.rowStates = {};
+    this.selectedAmount = 0;
+    this.isReturn = false;
+    this.selectAllChecked = false;
+    this.page = 1;
+    this.fetcAllData();
   }
   initFormGroup(item) {
     const formGroup = this.fb.group({
@@ -1131,13 +1138,7 @@ class CreateReconciliationComponent {
     this.creditcardservice.ReconcilationIds(data).subscribe(result => {
       if (result.isSuccess) {
         this.responseModal('success', `Reconciliation successfully done.`);
-        // Clear state on success
-        this.rowStates = {};
-        this.selectedAmount = 0;
-        this.isReturn = false;
-        this.selectAllChecked = false;
-        this.page = 1;
-        this.fetcAllData();
+        this.resetSelectionState();
       }
     }, err => {
       this.responseModal('error', err?.error?.errors[0]?.ErrorMessageEn);
